@@ -1,56 +1,101 @@
 import numpy as np
+import vtk
 
-def create_spherical_spiral(fname, nvertices, afac=1.0, mint=-10.0, maxt=10.0):
-    """Create a spherical spiral as a VTK polyline. The result is written
-       into a VTK file in legacy format.
-       Spherical spirals cut meridians at constant angle.
-       They are given by the expression:
-           
-       x(t) = cos(t)*sin(c+pi/2)
-       y(t) = sin(t)*sin(c+pi/2)
-       z(t) = cos(c+pi/2)
-           
-       with c = arctan(a*t)
-           
-       where t is the curve parameter and a is the angle parameter. This
-       vector field can be used to test VTK stream tracing.
+class spherical_spiral:
+    """Creates a spherical spiral as a VTK polyline object.
+       Also defines methods for visualising and storing the
+       spiral.
     """
 
-    # Curve parameter
-    t = np.linspace(mint, maxt, nvertices)
+    def __init__(self, nvertices, afac=1.0, mint=-10.0, maxt=10.0):
 
-    # Compute xyz coordinates of vertices
-    vertex_coords = []
-    for vertex in range(0, nvertices):
-        c = np.arctan(afac*t[vertex])
-        x = np.cos(t[vertex])*np.sin(c+0.5*np.pi)
-        y = np.sin(t[vertex])*np.sin(c+0.5*np.pi)
-        z = np.cos(c+0.5*np.pi)
-        vertex_coords.append([x,y,z])
+        self.nvertices = nvertices
+        self.ncells = nvertices - 1
+        self.afac = afac
+        self.mint = mint
+        self.maxt = maxt
 
-    nlines = nvertices - 1
+        self.create_spherical_spiral()
 
-    # Write into VTK file in legacy format
-    vtk_file = open(fname, "w")
-        
-    vtk_file.write("# vtk DataFile Version 3.0\n")
-    vtk_file.write("spherical spiral\n")
-    vtk_file.write("ASCII\n")
-    vtk_file.write("DATASET UNSTRUCTURED_GRID\n")
+    def create_spherical_spiral(self):
+        """Create a spherical spiral as a VTK polyline.
 
-    vtk_file.write("POINTS {} float\n".format(nvertices))
-    for vertex in range(0, nvertices):
-        vtk_file.write("{} {} {}\n".format(vertex_coords[vertex][0], vertex_coords[vertex][1], vertex_coords[vertex][2]))
+           Spherical spirals cut meridians at constant angle.
+           They are given by the expression:
+           
+           x(t) = cos(t)*sin(c+pi/2)
+           y(t) = sin(t)*sin(c+pi/2)
+           z(t) = cos(c+pi/2)
+           
+           with c = arctan(a*t)
+           
+           where t is the curve parameter and a is the angle parameter. This
+           vector field can be used to test VTK stream tracing.
+        """
 
-    vtk_file.write("CELLS {} {}\n".format(nlines, nlines*3))
-    for line in range(0, nlines):
-        vtk_file.write("2 {} {}\n".format(line, line+1))
+        # Curve parameter
+        t = np.linspace(self.mint, self.maxt, self.nvertices)
 
-    vtk_file.write("CELL_TYPES {}\n".format(nlines))
-    for cell in range(0, nlines):
-        vtk_file.write("3\n") # VTK line type
+        # Compute and store xyz coordinates of vertices ("points")
+        points = vtk.vtkPoints()
+        points.SetNumberOfPoints(self.nvertices)
+        for vertex in range(0, self.nvertices):
+            c = np.arctan(self.afac*t[vertex])
+            x = np.cos(t[vertex])*np.sin(c+0.5*np.pi)
+            y = np.sin(t[vertex])*np.sin(c+0.5*np.pi)
+            z = np.cos(c+0.5*np.pi)
+            points.SetPoint(vertex, x, y, z)
 
-    vtk_file.close
+        # Set point connectivity to form line
+        cells = vtk.vtkCellArray()
+        for cell in range(0, self.ncells):
+            cells.InsertNextCell(2)
+            cells.InsertCellPoint(cell)
+            cells.InsertCellPoint(cell+1)
+
+        # Create VTK object
+        self.polygon = vtk.vtkPolyData()
+        self.polygon.SetPoints(points)
+        self.polygon.SetLines(cells)
+
+    def show(self):
+        """Visualise spherical spiral
+        """
+
+        polygonMapper = vtk.vtkPolyDataMapper()
+        if vtk.VTK_MAJOR_VERSION <= 5:
+            polygonMapper.SetInputConnection(self.polygon.GetProducerPort())
+        else:
+            polygonMapper.SetInputData(self.polygon)
+            polygonMapper.Update()
+
+        polygonActor = vtk.vtkActor()
+        polygonActor.SetMapper(polygonMapper)
+
+        ren = vtk.vtkRenderer()
+        ren.AddActor(polygonActor)
+        ren.SetBackground(0.1, 0.2, 0.4)
+        ren.ResetCamera()
+
+        renWin = vtk.vtkRenderWindow()
+        renWin.AddRenderer(ren)
+        renWin.SetSize(300, 300)
+
+        iren = vtk.vtkRenderWindowInteractor()
+        iren.SetRenderWindow(renWin)
+        iren.Initialize()
+        iren.Start()
+
+    def write_vtk_file(self, fname):
+        """Write poly line into a ASCII VTK file.
+        """
+
+        vtk_file = vtk.vtkPolyDataWriter()
+        vtk_file.SetFileName(fname)
+        vtk_file.SetInputData(self.polygon)
+        vtk_file.Update()
 
 if __name__ == '__main__':
-    create_spherical_spiral("spherical_spiral.vtk", 1000, 0.1, -20.0, 20.0)
+    spiral = spherical_spiral(1000, 0.1, -20.0, 20.0)
+    spiral.show()
+    spiral.write_vtk_file("spherical_spiral.vtk")
